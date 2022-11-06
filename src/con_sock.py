@@ -8,6 +8,7 @@ import peer
 from multiprocessing import Process as Thread, Lock
 import multiprocessing
 import signal
+import sys
 from Crypto.Hash import keccak
 
 
@@ -40,14 +41,13 @@ class node:
                 }
 
     def cleanup(self, signum, frame):
-        mutex.acquire()
         print("cleaning up...")
         for a in self.peers.get_peers():
+            print("hi")
             p = self.peers.get_peer(a)
             if p:
                 p.msg(b"kill")
-        mutex.release()
-        exit(0)
+        sys.exit()
 
 
     def handler_kill(self, msg: str, addr: str):
@@ -73,9 +73,9 @@ class node:
                 self.peers.add_peer(peer.Peer(self.id, key))
 
 
-    def ltn_handler_peers(self, con:socket.socket):
-        p = base58.b58encode(json.dumps(self.peers))
-        con.send(p)
+    def ltn_handler_peers(self, con: peer.Peer):
+        p = base58.b58encode(json.dumps(list(self.peers.get_peers())))
+        con.msg(p)
         return True
 
     def handler_peers(self, msg: str, addr: str):
@@ -88,7 +88,7 @@ class node:
     def gen_id(self, server):
         ip, port = server.getsockname()
         if self.is_light:
-            self.id = "ltn@"+ip+":"+str(port)+"\n"
+            self.id = "ltn@"+ip+":"+str(port)
             return
         self.id = random.randbytes(10).hex()+"@"+ip+":"+str(port)
 
@@ -135,7 +135,7 @@ class node:
                 lh = reply_frags[1]
                 addr = reply_frags[0]
                 if addr.split("@")[0] == "ltn":
-                    self.ltn_handlers[reply_frags[2]](n_peer.connection)
+                    self.ltn_handlers[reply_frags[2]](n_peer)
                     return
 
                 if len(reply_frags) == 2:
@@ -152,8 +152,6 @@ class node:
                 if r:
                     if r.strip().splitlines()[1] != lh:
                         q.append(r)
-
-                # something here
 
 
     # def inbound_con(self, conn: socket.socket):
@@ -201,9 +199,8 @@ class node:
                 continue
 
     def run(self):
-        
         signal.signal(signal.SIGINT, self.cleanup)
-
+        # signal.signal(signal.SIGTERM, self.cleanup)
         if self.is_light:
             print("no initial discovery in light mode")
         else:
@@ -221,7 +218,3 @@ class node:
                 p.thread = t
                 mutex.release()
                 t.start()
-
-
-n = node(False)
-n.run()
