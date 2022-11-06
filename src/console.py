@@ -68,6 +68,7 @@ try:
             case "get_peers":
                 if PEER:
                     PEER.msg(b"get_peers")
-                    print(PEER.read())
+                    ps = str(PEER.read()).splitlines()[2]
+                    print(sock.base58.b58decode(ps).decode("utf-8"))
 except KeyboardInterrupt:
     sys.exit()

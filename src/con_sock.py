@@ -123,7 +123,6 @@ class node:
             t.start()
 
     def mainloop(self, n_peer: peer.Peer):
-        print("started listening to peer:", end=" ")
         mutex.acquire()
         reply = n_peer.read()
         q = [reply]
@@ -136,11 +135,12 @@ class node:
                 addr = reply_frags[0]
                 if addr.split("@")[0] == "ltn":
                     self.ltn_handlers[reply_frags[2]](n_peer)
+                    print("processed ltn message")
                     return
 
                 if len(reply_frags) == 2:
                     n_peer.addr = addr
-                    print(addr)
+                    print("started listening to peer:", addr)
                     self.peers.add_peer(n_peer)
                     n_peer.msg(b"")
                     mutex.release()
