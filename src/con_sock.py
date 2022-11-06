@@ -43,7 +43,6 @@ class node:
     def cleanup(self, signum, frame):
         print("cleaning up...")
         for a in self.peers.get_peers():
-            print("hi")
             p = self.peers.get_peer(a)
             if p:
                 p.msg(b"kill")
