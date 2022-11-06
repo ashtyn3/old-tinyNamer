@@ -5,7 +5,10 @@ import base58
 import struct
 import time
 import peer
-from threading import Thread, Lock
+from multiprocessing import Process as Thread, Lock
+import multiprocessing
+import signal
+from Crypto.Hash import keccak
 
 
 payload_max = 1024
@@ -29,12 +32,37 @@ class node:
         self.addr.append((self.addr[0][0], self.addr[0][1]+10))
         self.handlers: dict[str, callable[[str, str]]] = {
                 "get_peers": self.handler_peers,
-                "peers": self.handler_merge_peers
+                "peers": self.handler_merge_peers,
+                "kill": self.handler_kill
                 }
         self.ltn_handlers: dict[str, callable[[socket.socket], bool]] = {
                 "get_peers": self.ltn_handler_peers,
                 }
 
+    def cleanup(self, signum, frame):
+        mutex.acquire()
+        print("cleaning up...")
+        for a in self.peers.get_peers():
+            p = self.peers.get_peer(a)
+            if p:
+                p.msg(b"kill")
+        mutex.release()
+        exit(0)
+
+
+    def handler_kill(self, msg: str, addr: str):
+        print("Closing peer connection:", addr)
+        p = self.peers.get_peer(addr)
+        if p:
+            mutex.acquire()
+            p.connection.close()
+            self.peers.del_peer(addr)
+            p.run = False
+            # for proc in multiprocessing.active_children():
+            #     if proc.name == p.hash:
+            #         proc.terminate()
+        mutex.release()
+        
     def handler_merge_peers(self, msg: str, addr: str):
         reply_frags = msg.splitlines()
         peer_str = reply_frags[3]
@@ -101,7 +129,7 @@ class node:
         q = [reply]
         global lh
         lh = ""
-        while 1:
+        while n_peer.run:
             if len(q) != 0:
                 reply_frags = str(q.pop()).strip().splitlines()
                 lh = reply_frags[1]
@@ -115,11 +143,9 @@ class node:
                     print(addr)
                     self.peers.add_peer(n_peer)
                     n_peer.msg(b"")
-                    if mutex.locked():
-                        mutex.release()
+                    mutex.release()
                     n_peer.msg(b"get_peers")
                 elif len(reply_frags) > 1:
-                    print(reply_frags)
                     self.handlers[reply_frags[2]]("\n".join(reply_frags), addr)
             else:
                 r = n_peer.read()
@@ -156,7 +182,10 @@ class node:
     def outbound_con(self, p: peer.Peer):
         if p:
             p.msg(b"")
+            mutex.acquire()
             t = Thread(target=self.mainloop, args=[p])
+            p.thread = t
+            mutex.release()
             t.start()
 
     def bases(self):
@@ -172,6 +201,9 @@ class node:
                 continue
 
     def run(self):
+        
+        signal.signal(signal.SIGINT, self.cleanup)
+
         if self.is_light:
             print("no initial discovery in light mode")
         else:
@@ -182,9 +214,12 @@ class node:
             connection, _ = self.server.accept()
             # self.inbound_con(connection)
             if connection:
+                mutex.acquire()
                 p = peer.Peer(self.id, from_con=True, connection=connection)
                 p.msg(b"")
-                t= Thread(target=self.mainloop, args=[p])
+                t= Thread(target=self.mainloop, args=[p], name=p.hash)
+                p.thread = t
+                mutex.release()
                 t.start()
 
 

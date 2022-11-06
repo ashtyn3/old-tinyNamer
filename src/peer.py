@@ -3,6 +3,7 @@ import struct
 from threading import Lock
 import datetime
 from Crypto.Hash import keccak
+import multiprocessing
 
 def parse_addr(addr: str) -> tuple[str, int]:
     [ip, port] = addr.split("@")[1].split(":")
@@ -18,9 +19,13 @@ def make_msg(id: str, body: bytes):
 mutex = Lock()
 
 class Peer:
-    def __init__(self, self_id: str, addr: str = "", from_con: bool = False, connection: socket.socket | None = None, from_tuple: bool = False, tup: tuple[str, int] = ("", 0)):
+    def __init__(self, self_id: str, addr: str = "", from_con: bool = False, 
+                 connection: socket.socket | None = None, from_tuple: bool = False, tup: tuple[str, int] = ("", 0)):
         self.addr: str = addr
         self.err = False
+        self.thread: multiprocessing.Process
+        self.hash = ""
+
         if not from_con and not from_tuple:
             self.connection: socket.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             if len(addr) > 0:
@@ -36,6 +41,13 @@ class Peer:
                 # p_addr = self.read()
                 # if p_addr:
                 #     self.peer_tuple = parse_addr(p_addr)
+        [ip, port] = self.connection.getpeername()
+
+        k = keccak.new(digest_bits=256)
+        k.update(ip.encode() + str(port).encode())
+        self.hash = k.hexdigest()
+        self.run = True
+
         self.host_id = self_id
 
     def read_segment(self, n: int) -> bytes | None:
